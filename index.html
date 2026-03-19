@@ -11,7 +11,8 @@
     <link rel="stylesheet" href="./style.css">
   </head>
   <body>
-    <div id="app">
+    <div id="login-screen" style="display: none;"></div>
+    <div id="app" style="display: none;">
       <!-- Sidebar -->
       <aside class="sidebar">
         <div class="logo">
@@ -61,7 +62,7 @@
             </div>
             <div style="width: 32px; height: 32px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.75rem;" id="userAvatar">AD</div>
             <span style="font-weight: 500; font-size: 0.875rem;" id="userName">Admin</span>
-            <button onclick="logout()" style="background: transparent; border: 1px solid #e2e8f0; padding: 0.3rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.8125rem; color: #64748b; font-weight: 600;">Salir</button>
+            <button id="logoutBtn" style="background: transparent; border: 1px solid #e2e8f0; padding: 0.3rem 0.75rem; border-radius: 6px; cursor: pointer; font-size: 0.8125rem; color: #64748b; font-weight: 600;">Salir</button>
           </div>
         </header>
 

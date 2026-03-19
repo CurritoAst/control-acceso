@@ -1,11 +1,4 @@
-import { supabase } from '/supabase.js'
-
-// ── Session guard ──────────────────────────────────────────────────────────
 const { data: { session } } = await supabase.auth.getSession();
-if (!session) {
-  window.location.href = '/login.html';
-}
-
 const currentUser = session?.user;
 
 // ── Role Authorization ─────────────────────────────────────────────────────
@@ -13,18 +6,6 @@ let isAdmin = false;
 if (currentUser) {
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', currentUser.id).single();
   isAdmin = (profile?.role === 'Admin') || (currentUser.user_metadata?.role === 'Admin') || (currentUser.email === 'macario@duke.com');
-
-  if (!isAdmin) {
-    // Esconder elementos de navegación exclusivos de administrador
-    const navDashboard = document.querySelector('[data-view="dashboard"]');
-    const navUsers = document.querySelector('[data-view="users"]');
-    const navLogs = document.querySelector('[data-view="logs"]');
-    const navFerias = document.querySelector('[data-view="manage-ferias"]');
-    if (navDashboard) navDashboard.style.display = 'none';
-    if (navUsers) navUsers.style.display = 'none';
-    if (navLogs) navLogs.style.display = 'none';
-    if (navFerias) navFerias.style.display = 'none';
-  }
 }
 
 const app = {
@@ -34,6 +15,7 @@ const app = {
     ferias: [],
     timeLogs: [],
     activeWorkers: [],
+    allTodayLogs: [], // New state to track all logs from today
     viewedUserLogs: [],
     viewedUserName: '',
     logs: [
@@ -41,6 +23,138 @@ const app = {
       { id: 102, user: 'Visitante Desconocido', action: 'Acceso Denegado', area: 'Laboratorio', time: '10:08 AM' },
     ]
   },
+
+  async handleInit() {
+    if (!session) {
+      this.showLogin();
+    } else {
+      this.showDashboard();
+      await this.init();
+    }
+  },
+
+  showLogin() {
+    document.getElementById('app').style.display = 'none';
+    const loginScreen = document.getElementById('login-screen');
+    loginScreen.style.display = 'block';
+    this.renderLogin();
+  },
+
+  showDashboard() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+  },
+
+  renderLogin() {
+    const loginScreen = document.getElementById('login-screen');
+    loginScreen.innerHTML = `
+      <style>
+        .login-bg { position: fixed; inset: 0; z-index: 0; background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #1e1b4b 100%); overflow: hidden; height: 100vh; width: 100vw; }
+        .login-bg::before, .login-bg::after { content: ''; position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.35; }
+        .login-bg::before { width: 600px; height: 600px; background: radial-gradient(circle, #2563eb, transparent); top: -150px; left: -150px; }
+        .login-bg::after  { width: 500px; height: 500px; background: radial-gradient(circle, #7c3aed, transparent); bottom: -100px; right: -100px; }
+        .login-layout { position: relative; z-index: 1; display: flex; width: 100%; height: 100vh; }
+        .brand-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 4rem; color: white; }
+        .brand-headline { font-size: 2.75rem; font-weight: 800; line-height: 1.15; margin-bottom: 1.25rem; }
+        .card-panel { width: 480px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+        .card-auth { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); backdrop-filter: blur(24px); border-radius: 20px; padding: 2.5rem; width: 100%; color: white; }
+        .auth-tabs { display: flex; background: rgba(255,255,255,0.07); border-radius: 10px; padding: 4px; margin-bottom: 2rem; }
+        .auth-tab { flex: 1; padding: 0.625rem; text-align: center; font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.5); border-radius: 7px; cursor: pointer; }
+        .auth-tab.active { background: #2563eb; color: white; }
+        .auth-form { display: none; }
+        .auth-form.active { display: block; }
+        .auth-input { width: 100%; padding: 0.7rem 1rem; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; color: white; margin-bottom: 1rem; }
+        .btn-auth { width: 100%; padding: 0.8rem; background: #2563eb; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; }
+        @media (max-width: 900px) { .brand-panel { display: none; } .card-panel { width: 100%; } }
+      </style>
+      <div class="login-bg"></div>
+      <div class="login-layout">
+        <div class="brand-panel">
+          <h1 class="brand-headline">Controla el acceso<br>a tu <span style="color: #60a5fa;">organización</span></h1>
+          <p style="color: rgba(255,255,255,0.6); max-width: 380px;">Gestión centralizada de permisos y registros en tiempo real.</p>
+        </div>
+        <div class="card-panel">
+          <div class="card-auth">
+            <div class="auth-tabs">
+              <div class="auth-tab active" id="tab-login">Iniciar Sesión</div>
+              <div class="auth-tab" id="tab-register">Registrarse</div>
+            </div>
+            <div class="auth-form active" id="form-login">
+              <div id="login-alert" style="display:none; padding:10px; border-radius:8px; margin-bottom:15px; font-size:14px;"></div>
+              <input type="email" id="login-email" class="auth-input" placeholder="Email">
+              <input type="password" id="login-password" class="auth-input" placeholder="Contraseña">
+              <button class="btn-auth" id="btn-login-action">Entrar</button>
+            </div>
+            <div class="auth-form" id="form-register">
+              <div id="register-alert" style="display:none; padding:10px; border-radius:8px; margin-bottom:15px; font-size:14px;"></div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <input type="text" id="reg-name" class="auth-input" placeholder="Nombre">
+                <input type="text" id="reg-lastname" class="auth-input" placeholder="Apellido">
+              </div>
+              <input type="email" id="reg-email" class="auth-input" placeholder="Email">
+              <input type="password" id="reg-password" class="auth-input" placeholder="Contraseña">
+              <button class="btn-auth" id="btn-register-action">Crear Cuenta</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Listeners para pestañas
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const formLogin = document.getElementById('form-login');
+    const formRegister = document.getElementById('form-register');
+
+    tabLogin.onclick = () => {
+      tabLogin.classList.add('active'); tabRegister.classList.remove('active');
+      formLogin.classList.add('active'); formRegister.classList.remove('active');
+    };
+    tabRegister.onclick = () => {
+      tabRegister.classList.add('active'); tabLogin.classList.remove('active');
+      formRegister.classList.add('active'); formLogin.classList.remove('active');
+    };
+
+    // Acciones
+    document.getElementById('btn-login-action').onclick = async () => {
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        const al = document.getElementById('login-alert');
+        al.textContent = "Error: " + error.message;
+        al.style.display = 'block'; al.style.background = '#fee2e2'; al.style.color = '#991b1b';
+      } else {
+        window.location.reload(); // Recargar para actualizar sesión
+      }
+    };
+
+    document.getElementById('btn-register-action').onclick = async () => {
+      const name = document.getElementById('reg-name').value;
+      const lastname = document.getElementById('reg-lastname').value;
+      const email = document.getElementById('reg-email').value;
+      const password = document.getElementById('reg-password').value;
+      
+      const { data, error } = await supabase.auth.signUp({ 
+        email, 
+        password,
+        options: { data: { name: name + ' ' + lastname, role: 'Employee' } }
+      });
+
+      if (error) {
+        const al = document.getElementById('register-alert');
+        al.textContent = error.message; al.style.display = 'block'; al.style.background = '#fee2e2';
+      } else {
+        if (data.user) {
+          await supabase.from('profiles').insert({ id: data.user.id, name: name + ' ' + lastname, role: 'Employee', status: 'Active' });
+          const al = document.getElementById('register-alert');
+          al.textContent = "¡Cuenta creada! Revisa tu email.";
+          al.style.display = 'block'; al.style.background = '#dcfce7'; al.style.color = '#166534';
+        }
+      }
+    };
+  },
+
 
   async init() {
     if (!isAdmin) this.state.activeView = 'attendance';
@@ -164,6 +278,14 @@ const app = {
     const mobBtn = document.getElementById('mobileMenuBtn');
     if (mobBtn) {
       mobBtn.onclick = () => document.querySelector('.sidebar').classList.toggle('mobile-open');
+    }
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+      logoutBtn.onclick = async () => {
+        await supabase.auth.signOut();
+        window.location.reload();
+      };
     }
   },
 
@@ -338,22 +460,23 @@ const app = {
       </div>
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;">
         <div class="card" style="height:350px;display:flex;flex-direction:column; overflow-y:auto;">
-          <h3 style="font-size:1rem;margin-bottom:1rem;">Trabajadores en Activo (Hoy)</h3>
+          <h3 style="font-size:1rem;margin-bottom:1rem;">Actividad de Hoy</h3>
           ${isAdmin ? `
             <div style="display:flex;flex-direction:column;gap:1rem;">
-              ${!this.state.activeWorkers || this.state.activeWorkers.length === 0 ? '<p style="color:var(--text-muted);text-align:center;padding:2rem;">Nadie trabajando ahora mismo.</p>' : ''}
-              ${(this.state.activeWorkers || []).map(w => `
-                <div style="display:flex;justify-content:space-between;padding:1rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:0.75rem;">
+              ${!this.state.allTodayLogs || this.state.allTodayLogs.length === 0 ? '<p style="color:var(--text-muted);text-align:center;padding:2rem;">Sin actividad registrada hoy.</p>' : ''}
+              ${(this.state.allTodayLogs || []).map(w => `
+                <div style="display:flex;justify-content:space-between;padding:1rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:0.75rem; border-left: 4px solid ${w.isFinished ? '#94a3b8' : 'var(--success-text)'};">
                   <div style="display:flex;align-items:flex-start;gap:0.75rem;">
-                    <div style="width:10px;height:10px;border-radius:50%;background:var(--success-text);box-shadow:0 0 5px var(--success-text);margin-top:6px;"></div>
+                    <div style="width:10px;height:10px;border-radius:50%;background:${w.isFinished ? '#94a3b8' : 'var(--success-text)'};box-shadow:0 0 5px ${w.isFinished ? 'transparent' : 'var(--success-text)'};margin-top:6px;"></div>
                     <div style="display:flex;flex-direction:column;">
                       <a href="javascript:void(0)" onclick="app.viewUserHistory('${w.id}', '${w.name.replace(/'/g, "\\'")}')" style="font-weight:600;color:var(--primary);text-decoration:none;font-size:0.95rem;">${w.name}</a>
                       <span style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.25rem;font-weight:500;">🎪 Feria: ${w.feria_name}</span>
                     </div>
                   </div>
-                  <div style="color:var(--text-secondary);font-size:0.875rem;text-align:right;">
-                    <div>Entró a las ${w.time}</div>
-                    ${w.latitude && w.longitude ? `<a href="https://www.google.com/maps?q=${w.latitude},${w.longitude}" target="_blank" style="color:var(--primary);text-decoration:none;display:inline-flex;align-items:center;margin-top:0.25rem;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Ver mapa GPS</a>` : '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">Sin ubicación</div>'}
+                  <div style="color:var(--text-secondary);font-size:0.8125rem;text-align:right;">
+                    <div style="font-weight:600; color:var(--success-text);">Entrada: ${w.entryTime}</div>
+                    ${w.exitTime ? `<div style="font-weight:600; color:var(--error-text);">Salida: ${w.exitTime}</div>` : '<div style="font-style:italic; color:var(--warning-text);">Trabajando...</div>'}
+                    ${w.latitude && w.longitude ? `<a href="https://www.google.com/maps?q=${w.latitude},${w.longitude}" target="_blank" style="color:var(--primary);text-decoration:none;display:inline-flex;align-items:center;margin-top:0.25rem; font-size:11px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Ver GPS</a>` : ''}
                   </div>
                 </div>
               `).join('')}
@@ -651,50 +774,71 @@ const app = {
     const { data: logs } = await supabase.from('time_logs')
       .select('*')
       .gte('timestamp', today.toISOString())
-      .order('timestamp', { ascending: false });
+      .order('timestamp', { ascending: true }); // Orden ascendente para procesar pares entrada-salida
 
-    const latestStatus = {};
-    if (logs) {
-      logs.forEach(log => {
-        if (!latestStatus[log.user_id]) latestStatus[log.user_id] = log;
-      });
-    }
-
+    const dailyActivity = {}; // user_id -> { name, entryTime, exitTime, isFinished, ... }
+    
     if (this.state.users.length === 0) await this.loadUsers();
-
     const { data: feriasList } = await supabase.from('ferias').select('*');
     const { data: feriaWorkers } = await supabase.from('feria_workers').select('*');
 
-    this.state.activeWorkers = Object.values(latestStatus)
-      .filter(log => log.action_type === 'Entrada')
-      .map(log => {
-        const profile = this.state.users.find(u => u.id === log.user_id);
+    if (logs) {
+      logs.forEach(log => {
+        const userId = log.user_id;
+        const profile = this.state.users.find(u => u.id === userId);
+        const timeStr = new Date(log.timestamp).toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'});
         
-        // Determinar feria activa actual
-        let currentFeriaName = 'General / Sin Feria';
-        if (feriaWorkers && feriasList) {
-          const uAssigns = feriaWorkers.filter(fw => fw.user_id === log.user_id).map(fw => fw.feria_id);
-          const activeOrAssigned = feriasList.filter(f => uAssigns.includes(f.id));
-          if (activeOrAssigned.length > 0) {
-            const currentObj = activeOrAssigned.find(f => {
-              const start = new Date(f.start_date); start.setHours(0,0,0,0);
-              const end = new Date(f.end_date); end.setHours(23,59,59,999);
-              const now = new Date();
-              return now >= start && now <= end;
-            }) || activeOrAssigned[0];
-            currentFeriaName = currentObj.name;
+        if (!dailyActivity[userId]) {
+          // Determinar feria activa actual
+          let currentFeriaName = 'General / Sin Feria';
+          if (feriaWorkers && feriasList) {
+            const uAssigns = feriaWorkers.filter(fw => fw.user_id === userId).map(fw => fw.feria_id);
+            const activeOrAssigned = feriasList.filter(f => uAssigns.includes(f.id));
+            if (activeOrAssigned.length > 0) {
+              const currentObj = activeOrAssigned.find(f => {
+                const start = new Date(f.start_date); start.setHours(0,0,0,0);
+                const end = new Date(f.end_date); end.setHours(23,59,59,999);
+                const now = new Date();
+                return now >= start && now <= end;
+              }) || activeOrAssigned[0];
+              currentFeriaName = currentObj.name;
+            }
+          }
+
+          dailyActivity[userId] = {
+            id: userId,
+            name: profile ? profile.name : 'Desconocido',
+            entryTime: log.action_type === 'Entrada' ? timeStr : 'N/A',
+            exitTime: log.action_type === 'Salida' ? timeStr : null,
+            isFinished: log.action_type === 'Salida',
+            latitude: log.latitude,
+            longitude: log.longitude,
+            feria_name: currentFeriaName
+          };
+        } else {
+          // Actualizar registros existentes para el usuario hoy
+          if (log.action_type === 'Entrada') {
+             dailyActivity[userId].entryTime = timeStr;
+             dailyActivity[userId].isFinished = false;
+             dailyActivity[userId].exitTime = null;
+          } else {
+             dailyActivity[userId].exitTime = timeStr;
+             dailyActivity[userId].isFinished = true;
+          }
+          // Siempre guardar la última ubicación conocida
+          if (log.latitude) {
+            dailyActivity[userId].latitude = log.latitude;
+            dailyActivity[userId].longitude = log.longitude;
           }
         }
-
-        return {
-          id: log.user_id,
-          name: profile ? profile.name : 'Desconocido',
-          time: new Date(log.timestamp).toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'}),
-          latitude: log.latitude,
-          longitude: log.longitude,
-          feria_name: currentFeriaName
-        };
       });
+    }
+
+    this.state.allTodayLogs = Object.values(dailyActivity).sort((a, b) => {
+      // Ordenar por quién está trabajando ahora o por hora de entrada
+      if (a.isFinished !== b.isFinished) return a.isFinished ? 1 : -1;
+      return a.entryTime.localeCompare(b.entryTime);
+    });
   },
 
   async loadFeriasData() {
@@ -921,3 +1065,5 @@ window.handlePunch = async function(type) {
     if(btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
   });
 };
+a p p . h a n d l e I n i t ( ) ;  
+ 
