@@ -21,7 +21,7 @@ const app = {
     viewedUserLogs: [],
     viewedUserName: '',
     logs: [
-      { id: 101, user: 'Juan PÃ©rez', action: 'Acceso Concedido', area: 'Entrada Principal', time: '10:15 AM' },
+      { id: 101, user: 'Juan Pérez', action: 'Acceso Concedido', area: 'Entrada Principal', time: '10:15 AM' },
       { id: 102, user: 'Visitante Desconocido', action: 'Acceso Denegado', area: 'Laboratorio', time: '10:08 AM' },
     ]
   },
@@ -72,19 +72,19 @@ const app = {
       <div class="login-bg"></div>
       <div class="login-layout">
         <div class="brand-panel">
-          <h1 class="brand-headline">Controla el acceso<br>a tu <span style="color: #60a5fa;">organizaciÃ³n</span></h1>
-          <p style="color: rgba(255,255,255,0.6); max-width: 380px;">GestiÃ³n centralizada de permisos y registros en tiempo real.</p>
+          <h1 class="brand-headline">Controla el acceso<br>a tu <span style="color: #60a5fa;">organización</span></h1>
+          <p style="color: rgba(255,255,255,0.6); max-width: 380px;">Gestión centralizada de permisos y registros en tiempo real.</p>
         </div>
         <div class="card-panel">
           <div class="card-auth">
             <div class="auth-tabs">
-              <div class="auth-tab active" id="tab-login">Iniciar SesiÃ³n</div>
+              <div class="auth-tab active" id="tab-login">Iniciar Sesión</div>
               <div class="auth-tab" id="tab-register">Registrarse</div>
             </div>
             <div class="auth-form active" id="form-login">
               <div id="login-alert" style="display:none; padding:10px; border-radius:8px; margin-bottom:15px; font-size:14px;"></div>
               <input type="email" id="login-email" class="auth-input" placeholder="Email">
-              <input type="password" id="login-password" class="auth-input" placeholder="ContraseÃ±a">
+              <input type="password" id="login-password" class="auth-input" placeholder="Contraseña">
               <button class="btn-auth" id="btn-login-action">Entrar</button>
             </div>
             <div class="auth-form" id="form-register">
@@ -94,7 +94,7 @@ const app = {
                 <input type="text" id="reg-lastname" class="auth-input" placeholder="Apellido">
               </div>
               <input type="email" id="reg-email" class="auth-input" placeholder="Email">
-              <input type="password" id="reg-password" class="auth-input" placeholder="ContraseÃ±a">
+              <input type="password" id="reg-password" class="auth-input" placeholder="Contraseña">
               <button class="btn-auth" id="btn-register-action">Crear Cuenta</button>
             </div>
           </div>
@@ -102,7 +102,7 @@ const app = {
       </div>
     `;
 
-    // Listeners para pestaÃ±as
+    // Listeners para pestañas
     const tabLogin = document.getElementById('tab-login');
     const tabRegister = document.getElementById('tab-register');
     const formLogin = document.getElementById('form-login');
@@ -127,7 +127,7 @@ const app = {
         al.textContent = "Error: " + error.message;
         al.style.display = 'block'; al.style.background = '#fee2e2'; al.style.color = '#991b1b';
       } else {
-        window.location.reload(); // Recargar para actualizar sesiÃ³n
+        window.location.reload(); // Recargar para actualizar sesión
       }
     };
 
@@ -150,7 +150,7 @@ const app = {
         if (data.user) {
           await supabase.from('profiles').insert({ id: data.user.id, name: name + ' ' + lastname, role: 'Employee', status: 'Active' });
           const al = document.getElementById('register-alert');
-          al.textContent = "Â¡Cuenta creada! Revisa tu email.";
+          al.textContent = "¡Cuenta creada! Revisa tu email.";
           al.style.display = 'block'; al.style.background = '#dcfce7'; al.style.color = '#166534';
         }
       }
@@ -213,7 +213,7 @@ const app = {
       <div id="modalOverlay" class="modal-overlay">
         <div class="modal">
           <div class="modal-header">
-            <h2 style="font-size: 1.125rem; font-weight: 700;">AÃ±adir Nuevo Usuario</h2>
+            <h2 style="font-size: 1.125rem; font-weight: 700;">Añadir Nuevo Usuario</h2>
             <button class="btn btn-ghost" id="closeModal">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </button>
@@ -222,15 +222,15 @@ const app = {
             <div class="modal-body">
               <div class="form-group">
                 <label>Nombre Completo</label>
-                <input type="text" id="userName" class="input-field" placeholder="Ej. Alex Smith" required>
+                <input type="text" id="userFullName" class="input-field" placeholder="Ej. Alex Smith" required>
               </div>
               <div class="form-group">
                 <label>Email</label>
                 <input type="email" id="userEmail" class="input-field" placeholder="alex@empresa.com" required>
               </div>
               <div class="form-group">
-                <label>ContraseÃ±a inicial</label>
-                <input type="password" id="userPassword" class="input-field" placeholder="MÃ­nimo 6 caracteres" required>
+                <label>Contraseña inicial</label>
+                <input type="password" id="userPassword" class="input-field" placeholder="Mínimo 6 caracteres" required>
               </div>
               <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                 <div>
@@ -347,7 +347,7 @@ const app = {
   },
 
   async addUser() {
-    const name     = document.getElementById('userName').value.trim();
+    const name     = document.getElementById('userFullName').value.trim();
     const email    = document.getElementById('userEmail').value.trim();
     const password = document.getElementById('userPassword').value;
     const role     = document.getElementById('userRole').value;
@@ -359,7 +359,10 @@ const app = {
     saveBtn.disabled = true;
     saveBtn.textContent = 'Guardando...';
 
-    // Sign up the user via Supabase Auth
+    // Guardar sesión del admin antes de crear usuario
+    // (signUp puede reemplazar la sesión activa si no hay confirmación de email)
+    const { data: { session: adminSession } } = await supabase.auth.getSession();
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -374,9 +377,17 @@ const app = {
       return;
     }
 
-    // Insert profile row
+    // Restaurar sesión del admin si signUp la reemplazó
+    if (adminSession && data.session) {
+      await supabase.auth.setSession({
+        access_token: adminSession.access_token,
+        refresh_token: adminSession.refresh_token
+      });
+    }
+
+    // Insertar perfil en la tabla profiles
     if (data.user) {
-      await supabase.from('profiles').insert({
+      const { error: profileError } = await supabase.from('profiles').insert({
         id: data.user.id,
         name,
         email,
@@ -384,6 +395,13 @@ const app = {
         status,
         last_access: 'Nunca'
       });
+      if (profileError) {
+        errEl.textContent = 'Usuario creado pero error al guardar perfil: ' + profileError.message;
+        errEl.style.display = 'block';
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Guardar Usuario';
+        return;
+      }
     }
 
     saveBtn.disabled = false;
@@ -424,7 +442,7 @@ const app = {
       content.innerHTML = this.getUserHistoryHTML();
     } else {
       content.innerHTML = `<div style="text-align:center;padding:4rem;color:var(--text-secondary);">
-        <h2>Vista prÃ³ximamente</h2><p>Esta secciÃ³n estÃ¡ en desarrollo.</p>
+        <h2>Vista próximamente</h2><p>Esta sección está en desarrollo.</p>
       </div>`;
     }
 
@@ -442,7 +460,7 @@ const app = {
         <div class="card" ${isAdmin ? 'id="totalUsersCard" style="cursor: pointer; transition: transform 0.2s;" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'translateY(0)\'" title="Ir al listado de usuarios"' : ''}>
           <span class="card-title">Usuarios Totales</span>
           <div class="card-value">${this.state.users.length}</div>
-          <div class="card-trend trend-up">${isAdmin ? 'Ver listado â†’' : 'En Supabase'}</div>
+          <div class="card-trend trend-up">${isAdmin ? 'Ver listado →' : 'En Supabase'}</div>
         </div>
         <div class="card">
           <span class="card-title">Accesos Hoy</span>
@@ -472,7 +490,7 @@ const app = {
                     <div style="width:10px;height:10px;border-radius:50%;background:${w.isFinished ? '#94a3b8' : 'var(--success-text)'};box-shadow:0 0 5px ${w.isFinished ? 'transparent' : 'var(--success-text)'};margin-top:6px;"></div>
                     <div style="display:flex;flex-direction:column;">
                       <a href="javascript:void(0)" onclick="app.viewUserHistory('${w.id}', '${w.name.replace(/'/g, "\\'")}')" style="font-weight:600;color:var(--primary);text-decoration:none;font-size:0.95rem;">${w.name}</a>
-                      <span style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.25rem;font-weight:500;">ðŸŽª Feria: ${w.feria_name}</span>
+                      <span style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.25rem;font-weight:500;">🚪 Feria: ${w.feria_name}</span>
                     </div>
                   </div>
                   <div style="color:var(--text-secondary);font-size:0.8125rem;text-align:right;">
@@ -483,7 +501,7 @@ const app = {
                 </div>
               `).join('')}
             </div>
-          ` : '<div style="flex-grow:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);border:2px dashed #f1f5f9;border-radius:8px;">[ GrÃ¡fico Reservado ]</div>'}
+          ` : '<div style="flex-grow:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);border:2px dashed #f1f5f9;border-radius:8px;">[ Gráfico Reservado ]</div>'}
         </div>
         <div class="card">
           <h3 style="font-size:1rem;margin-bottom:1rem;">Alertas Recientes</h3>
@@ -504,10 +522,10 @@ const app = {
     return `
       <div style="margin-bottom:2rem;display:flex;justify-content:space-between;align-items:center;">
         <div>
-          <h1 style="font-size:1.5rem;font-weight:700;">GestiÃ³n de Usuarios</h1>
+          <h1 style="font-size:1.5rem;font-weight:700;">Gestión de Usuarios</h1>
           <p style="color:var(--text-secondary);">Administra los permisos y accesos.</p>
         </div>
-        <button class="btn btn-primary btn-add-user">AÃ±adir Usuario</button>
+        <button class="btn btn-primary btn-add-user">Añadir Usuario</button>
       </div>
       <div class="table-container">
         <div class="table-header">
@@ -516,12 +534,12 @@ const app = {
         <table>
           <thead>
             <tr>
-              <th>Usuario</th><th>Rol</th><th>Estado</th><th>Ãšltimo Acceso</th><th>Acciones</th>
+              <th>Usuario</th><th>Rol</th><th>Estado</th><th>Último Acceso</th><th>Acciones</th>
             </tr>
           </thead>
           <tbody>
             ${this.state.users.length === 0
-              ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">No hay usuarios todavÃ­a.</td></tr>`
+              ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">No hay usuarios todavía.</td></tr>`
               : this.state.users.map(u => this.renderUserRow(u)).join('')
             }
           </tbody>
@@ -608,11 +626,11 @@ const app = {
       const h = Math.floor(ms / 1000 / 60 / 60);
       const m = Math.floor((ms / 1000 / 60) % 60);
       
-      const inLink = dayData.inLoc && dayData.inLoc.lat ? `<a href="https://www.google.com/maps?q=${dayData.inLoc.lat},${dayData.inLoc.lon}" target="_blank" style="color:var(--success-text);text-decoration:underline;display:flex;align-items:center;gap:0.3rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg> Mapa (Entrada)</a>` : '<span style="color:var(--text-muted)">ðŸš« Sin GPS detectado</span>';
+      const inLink = dayData.inLoc && dayData.inLoc.lat ? `<a href="https://www.google.com/maps?q=${dayData.inLoc.lat},${dayData.inLoc.lon}" target="_blank" style="color:var(--success-text);text-decoration:underline;display:flex;align-items:center;gap:0.3rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg> Mapa (Entrada)</a>` : '<span style="color:var(--text-muted)">🚫 Sin GPS detectado</span>';
       
-      const outLink = dayData.outLoc && dayData.outLoc.lat ? `<a href="https://www.google.com/maps?q=${dayData.outLoc.lat},${dayData.outLoc.lon}" target="_blank" style="color:var(--error-text);text-decoration:underline;display:flex;align-items:center;gap:0.3rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg> Mapa (Salida)</a>` : '<span style="color:var(--text-muted)">ðŸš« AÃºn trabajando o sin GPS</span>';
+      const outLink = dayData.outLoc && dayData.outLoc.lat ? `<a href="https://www.google.com/maps?q=${dayData.outLoc.lat},${dayData.outLoc.lon}" target="_blank" style="color:var(--error-text);text-decoration:underline;display:flex;align-items:center;gap:0.3rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg> Mapa (Salida)</a>` : '<span style="color:var(--text-muted)">🚫 Aún trabajando o sin GPS</span>';
 
-      const statusText = isWorkingUnfinished ? '<span style="color:var(--warning-text);font-weight:600;background:#fefce8;padding:0.25rem 0.5rem;border-radius:6px;border:1px solid #fef08a;">(AÃºn en su turno)</span>' : `<span style="font-weight:700;">${h}h ${m}m </span>`;
+      const statusText = isWorkingUnfinished ? '<span style="color:var(--warning-text);font-weight:600;background:#fefce8;padding:0.25rem 0.5rem;border-radius:6px;border:1px solid #fef08a;">(Aún en su turno)</span>' : `<span style="font-weight:700;">${h}h ${m}m </span>`;
 
       return `
         <div style="padding:1.5rem;background:white;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:1.5rem;box-shadow:var(--shadow-sm);">
@@ -635,7 +653,7 @@ const app = {
           </div>
         </div>
       `;
-    }).join('') || '<div style="text-align:center;padding:4rem;background:white;border-radius:12px;border:1px dashed #cbd5e1;"><p style="color:var(--text-muted);font-size:1rem;">Este empleado no tiene registros en el sistema todavÃ­a.</p></div>';
+    }).join('') || '<div style="text-align:center;padding:4rem;background:white;border-radius:12px;border:1px dashed #cbd5e1;"><p style="color:var(--text-muted);font-size:1rem;">Este empleado no tiene registros en el sistema todavía.</p></div>';
 
     return `
       <div style="margin-bottom:2.5rem;display:flex;align-items:center;gap:1.5rem;">
@@ -644,7 +662,7 @@ const app = {
         </button>
         <div>
           <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;">Historial Laboral: ${this.state.viewedUserName}</h1>
-          <p style="color:var(--text-secondary);font-size:1rem;margin-top:0.25rem;">Registro de asistencia detallado y ubicaciones GPS de conexiÃ³n/desconexiÃ³n.</p>
+          <p style="color:var(--text-secondary);font-size:1rem;margin-top:0.25rem;">Registro de asistencia detallado y ubicaciones GPS de conexión/desconexión.</p>
         </div>
       </div>
       <div style="max-width:850px;margin-left:0;">
@@ -717,16 +735,16 @@ const app = {
         <span style="font-weight:600;color:var(--text-main);">${dateStr}</span>
         <span style="color:var(--text-secondary);">${h}h ${m}m trabajados</span>
       </div>`;
-    }).join('') || '<p style="color:var(--text-muted);font-size:0.875rem;">No hay registros de horas de dÃ­as anteriores.</p>';
+    }).join('') || '<p style="color:var(--text-muted);font-size:0.875rem;">No hay registros de horas de días anteriores.</p>';
 
     return `
       <div style="margin-bottom:2rem;">
         <h1 style="font-size:1.5rem;font-weight:700;">Mi Horario</h1>
-        <p style="color:var(--text-secondary);">Revisa prÃ³ximamente las ferias, ficha hoy y mira tu historial.</p>
+        <p style="color:var(--text-secondary);">Revisa próximamente las ferias, ficha hoy y mira tu historial.</p>
       </div>
       <div class="attendance-grid">
         <div class="card">
-          <h2 style="font-size:1.125rem;font-weight:600;margin-bottom:1rem;">PrÃ³ximas Ferias</h2>
+          <h2 style="font-size:1.125rem;font-weight:600;margin-bottom:1rem;">Próximas Ferias</h2>
           <div class="feria-list">
             ${this.state.ferias.length === 0 ? '<p style="color:var(--text-muted);">No hay ferias registradas en sistema.</p>' : ''}
             ${this.state.ferias.map(f => `
@@ -827,7 +845,7 @@ const app = {
              dailyActivity[userId].exitTime = timeStr;
              dailyActivity[userId].isFinished = true;
           }
-          // Siempre guardar la Ãºltima ubicaciÃ³n conocida
+          // Siempre guardar la última ubicación conocida
           if (log.latitude) {
             dailyActivity[userId].latitude = log.latitude;
             dailyActivity[userId].longitude = log.longitude;
@@ -837,7 +855,7 @@ const app = {
     }
 
     this.state.allTodayLogs = Object.values(dailyActivity).sort((a, b) => {
-      // Ordenar por quiÃ©n estÃ¡ trabajando ahora o por hora de entrada
+      // Ordenar por quién está trabajando ahora o por hora de entrada
       if (a.isFinished !== b.isFinished) return a.isFinished ? 1 : -1;
       return a.entryTime.localeCompare(b.entryTime);
     });
@@ -859,21 +877,21 @@ const app = {
     return `
       <div style="margin-bottom:2rem;display:flex;justify-content:space-between;align-items:center;">
         <div>
-          <h1 style="font-size:1.5rem;font-weight:700;">GestiÃ³n de Ferias</h1>
+          <h1 style="font-size:1.5rem;font-weight:700;">Gestión de Ferias</h1>
           <p style="color:var(--text-secondary);">Administra el calendario de eventos globales.</p>
         </div>
-        <button class="btn btn-primary" onclick="app.openFeriaModal()">AÃ±adir Feria</button>
+        <button class="btn btn-primary" onclick="app.openFeriaModal()">Añadir Feria</button>
       </div>
       <div class="card" style="padding:2rem;">
         <div class="feria-list">
-          ${this.state.ferias.length === 0 ? '<p style="color:var(--text-muted);text-align:center;">No existen ferias registradas. AÃ±ade una para tus empleados.</p>' : ''}
+          ${this.state.ferias.length === 0 ? '<p style="color:var(--text-muted);text-align:center;">No existen ferias registradas. Añade una para tus empleados.</p>' : ''}
           ${this.state.ferias.map(f => `
             <div class="feria-item">
               <div>
                 <div class="feria-date">${new Date(f.start_date).toLocaleDateString('es-ES')} - ${new Date(f.end_date).toLocaleDateString('es-ES')}</div>
                 <div class="feria-name">${f.name}</div>
                 <div class="feria-loc">${f.location}</div>
-                <div style="font-size:0.75rem;color:var(--primary);margin-top:0.25rem;font-weight:600;">ðŸ‘¥ ${f.workerCount || 0} Personal Asignado</div>
+                <div style="font-size:0.75rem;color:var(--primary);margin-top:0.25rem;font-weight:600;">👥 ${f.workerCount || 0} Personal Asignado</div>
               </div>
               <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:flex-end;">
                 <button class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.75rem; font-weight:600;" onclick="app.manageFeriaWorkers('${f.id}')">Gestionar Empleados</button>
@@ -901,7 +919,7 @@ const app = {
                 <div><label>Fecha Inicio</label><input type="date" id="feriaStart" class="input-field" required></div>
                 <div><label>Fecha Fin</label><input type="date" id="feriaEnd" class="input-field" required></div>
               </div>
-              <div class="form-group"><label>UbicaciÃ³n</label><input type="text" id="feriaLoc" class="input-field" required></div>
+              <div class="form-group"><label>Ubicación</label><input type="text" id="feriaLoc" class="input-field" required></div>
               <div class="form-group">
                 <label>Trabajadores Asignados</label>
                 <div id="feriaWorkersList" style="max-height:150px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; padding:0.5rem; display:flex; flex-direction:column; gap:0.5rem; background:#f8fafc;">
@@ -931,7 +949,7 @@ const app = {
           <form id="workersForm">
             <input type="hidden" id="editFeriaId" />
             <div class="modal-body">
-              <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:1rem;">Selecciona quiÃ©nes tendrÃ¡n acceso a esta feria en su calendario:</p>
+              <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:1rem;">Selecciona quiénes tendrán acceso a esta feria en su calendario:</p>
               <div id="editWorkersList" style="max-height:300px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; display:flex; flex-direction:column; gap:0.75rem; background:#f8fafc;">
               </div>
             </div>
@@ -1027,13 +1045,52 @@ const app = {
 
 window.app = app;
 
+function showGeoBlockedModal() {
+  const existing = document.getElementById('geoBlockedModal');
+  if (existing) existing.remove();
+  const isFirefox = navigator.userAgent.includes('Firefox');
+  const isSafari = navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome');
+  const isEdge = navigator.userAgent.includes('Edg');
+  let steps = '';
+  if (isFirefox) {
+    steps = `<li>Haz clic en el icono del <strong>candado 🔒</strong> en la barra de dirección</li><li>Busca <strong>"Acceder a tu posición"</strong> y cámbialo a <strong>Permitir</strong></li><li>Recarga la página</li>`;
+  } else if (isSafari) {
+    steps = `<li>Ve a <strong>Safari → Ajustes para este sitio web</strong></li><li>Cambia <strong>Ubicación</strong> a <strong>Permitir</strong></li><li>Recarga la página</li>`;
+  } else if (isEdge) {
+    steps = `<li>Haz clic en el icono del <strong>candado 🔒</strong> en la barra de dirección</li><li>Haz clic en <strong>Permisos para este sitio</strong></li><li>En <strong>Ubicación</strong>, selecciona <strong>Permitir</strong></li><li>Recarga la página</li>`;
+  } else {
+    steps = `<li>Haz clic en el icono del <strong>candado 🔒</strong> en la barra de dirección</li><li>Selecciona <strong>Configuración del sitio</strong></li><li>En <strong>Ubicación</strong>, cambia a <strong>Permitir</strong></li><li>Recarga la página</li>`;
+  }
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="geoBlockedModal" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;">
+      <div style="background:white;border-radius:16px;padding:2rem;max-width:420px;width:100%;box-shadow:0 25px 50px rgba(0,0,0,0.25);">
+        <div style="text-align:center;margin-bottom:1.5rem;">
+          <div style="font-size:3rem;margin-bottom:0.5rem;">📍</div>
+          <h2 style="font-size:1.25rem;font-weight:800;color:#0f172a;margin-bottom:0.5rem;">Ubicación bloqueada</h2>
+          <p style="color:#64748b;font-size:0.9rem;">La ubicación GPS es <strong>obligatoria</strong> para fichar. Tu navegador tiene el acceso bloqueado.</p>
+        </div>
+        <div style="background:#f8fafc;border-radius:10px;padding:1.25rem;margin-bottom:1.5rem;">
+          <p style="font-weight:700;font-size:0.875rem;color:#0f172a;margin-bottom:0.75rem;">Cómo activarla:</p>
+          <ol style="padding-left:1.25rem;color:#334155;font-size:0.875rem;display:flex;flex-direction:column;gap:0.5rem;">${steps}</ol>
+        </div>
+        <button onclick="document.getElementById('geoBlockedModal').remove(); location.reload();" style="width:100%;padding:0.85rem;background:#2563eb;color:white;border:none;border-radius:10px;font-weight:700;font-size:0.9rem;cursor:pointer;">
+          Recargar página tras activarla
+        </button>
+        <button onclick="document.getElementById('geoBlockedModal').remove();" style="width:100%;padding:0.6rem;background:transparent;color:#64748b;border:none;cursor:pointer;margin-top:0.5rem;font-size:0.85rem;">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  `);
+}
+
 window.handlePunch = async function(type) {
   const btn = document.getElementById('btnPunchAction');
-  if(btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
+  if(btn) { btn.disabled = true; btn.textContent = 'Obteniendo ubicación...'; }
 
   if (!navigator.geolocation) {
-    alert('Tu navegador no soporta geolocalización o está desactivada.');
-    if(btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
+    showGeoBlockedModal();
+    if(btn) { btn.disabled = false; btn.textContent = type === 'Entrada' ? 'Fichar ENTRADA' : 'Fichar SALIDA'; }
     return;
   }
 
@@ -1050,15 +1107,15 @@ window.handlePunch = async function(type) {
 
     if (error) {
       alert('Error al fichar en base de datos: ' + error.message);
-      if(btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
+      if(btn) { btn.disabled = false; btn.textContent = type === 'Entrada' ? 'Fichar ENTRADA' : 'Fichar SALIDA'; }
     } else {
       await app.loadAttendanceData();
       app.renderView('attendance');
     }
-  }, (err) => {
-    alert('No se ha podido obtener tu ubicación GPS (necesario para fichar y verificar tu posición). Por favor da permiso a tu navegador.');
-    if(btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
-  });
+  }, (_err) => {
+    if(btn) { btn.disabled = false; btn.textContent = type === 'Entrada' ? 'Fichar ENTRADA' : 'Fichar SALIDA'; }
+    showGeoBlockedModal();
+  }, { timeout: 10000 });
 };
 
 app.handleInit();
