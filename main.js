@@ -514,7 +514,7 @@ const app = {
                     ${isWorking ? '🟢 Trabajando actualmente' : '⚪ Inactivo'}
                   </span>
                 </div>`
-              : `<button class="btn-punch" disabled style="width:100%; padding:1.25rem; font-size:1.25rem; background:#cbd5e1; color:#f8fafc; border:none; border-radius:12px; cursor:not-allowed;">
+              : `<button class="btn-punch" disabled style="width:100%; padding:1.25rem; font-size:1.25rem; background:linear-gradient(135deg, #3b82f6, #2563eb); color:white; border:none; border-radius:12px; cursor:not-allowed; box-shadow:0 10px 25px -5px rgba(37,99,235,0.4);">
                   Rellena los datos para fichar
                 </button>`
             }
