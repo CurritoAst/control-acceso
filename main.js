@@ -1150,7 +1150,10 @@ const app = {
               </div>
               <div class="form-group"><label>Ubicación</label><input type="text" id="feriaLoc" class="input-field" required></div>
               <div class="form-group">
-                <label>Trabajadores Asignados</label>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                  <label style="margin:0;">Trabajadores Asignados</label>
+                  <button type="button" id="toggleAllNewBtn" onclick="window.toggleAllWorkers('feria_workers','toggleAllNewBtn')" style="font-size:0.78rem;font-weight:600;color:#2563eb;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:0.3rem 0.75rem;cursor:pointer;">Seleccionar todos</button>
+                </div>
                 <div id="feriaWorkersList" style="max-height:150px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; padding:0.5rem; display:flex; flex-direction:column; gap:0.5rem; background:#f8fafc;">
                   <!-- Checkboxes generados por JS -->
                 </div>
@@ -1178,7 +1181,10 @@ const app = {
           <form id="workersForm">
             <input type="hidden" id="editFeriaId" />
             <div class="modal-body">
-              <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:1rem;">Selecciona quiénes tendrán acceso a esta feria en su calendario:</p>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <p style="font-size:0.875rem;color:var(--text-secondary);margin:0;">Selecciona quiénes tendrán acceso:</p>
+                <button type="button" id="toggleAllEditBtn" onclick="window.toggleAllWorkers('edit_feria_workers','toggleAllEditBtn')" style="font-size:0.78rem;font-weight:600;color:#2563eb;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:0.3rem 0.75rem;cursor:pointer;">Seleccionar todos</button>
+              </div>
               <div id="editWorkersList" style="max-height:300px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; display:flex; flex-direction:column; gap:0.75rem; background:#f8fafc;">
               </div>
             </div>
@@ -1413,6 +1419,14 @@ window.handlePunch = async function(type, workerId, feriaId) {
     if(btn) { btn.disabled = false; btn.textContent = type === 'Entrada' ? 'Fichar ENTRADA' : 'Fichar SALIDA'; }
     showGeoBlockedModal();
   }, { timeout: 10000 });
+};
+
+window.toggleAllWorkers = function(checkboxName, btnId) {
+  const checkboxes = Array.from(document.querySelectorAll(`input[name="${checkboxName}"]`));
+  const allChecked = checkboxes.every(cb => cb.checked);
+  checkboxes.forEach(cb => { cb.checked = !allChecked; });
+  const btn = document.getElementById(btnId);
+  if (btn) btn.textContent = allChecked ? 'Seleccionar todos' : 'Deseleccionar todos';
 };
 
 window.showHorasPorFeria = async function(userId, userName) {
