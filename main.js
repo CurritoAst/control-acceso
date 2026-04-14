@@ -12,7 +12,7 @@ if (currentUser) {
 
 const app = {
   state: {
-    activeView: 'kiosk',
+    activeView: 'dashboard',
     users: [],
     ferias: [],
     timeLogs: [],
@@ -171,6 +171,9 @@ const app = {
     await this.loadFeriasData();
     if (this.state.activeView === 'kiosk') {
       await this.loadKioskData();
+    }
+    if (this.state.activeView === 'dashboard') {
+      await this.loadDashboardData();
     }
     
     document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
@@ -355,6 +358,7 @@ const app = {
     if (navItem) navItem.classList.add('active');
     this.state.activeView = view;
 
+    if (view === 'dashboard') await this.loadDashboardData();
     if (view === 'users') await this.loadUsers();
     if (view === 'manage-ferias') await this.loadFeriasData();
     if (view === 'kiosk') await this.loadKioskData();
@@ -450,7 +454,9 @@ const app = {
     const content = document.getElementById('content');
     content.innerHTML = '';
 
-    if (view === 'kiosk') {
+    if (view === 'dashboard') {
+      content.innerHTML = this.getDashboardHTML();
+    } else if (view === 'kiosk') {
       content.innerHTML = this.getKioskHTML();
     } else if (view === 'users') {
       content.innerHTML = this.getUsersHTML();
@@ -465,6 +471,138 @@ const app = {
     }
 
     this.bindViewEvents();
+  },
+
+  async loadDashboardData() {
+    if (this.state.users.length === 0) await this.loadUsers();
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const { data: logs } = await supabase
+      .from('time_logs')
+      .select('*, ferias(id, name)')
+      .gte('timestamp', today.toISOString())
+      .order('timestamp', { ascending: true });
+
+    this.state.dashboardLogs = logs || [];
+  },
+
+  getDashboardHTML() {
+    const logs = this.state.dashboardLogs || [];
+
+    // Agrupar logs por usuario y obtener el último evento de cada uno
+    const userLastLog = {};
+    logs.forEach(log => {
+      userLastLog[log.user_id] = log;
+    });
+
+    // Filtrar los que están actualmente trabajando (último log = Entrada)
+    const workingNow = Object.entries(userLastLog)
+      .filter(([, log]) => log.action_type === 'Entrada')
+      .map(([userId, log]) => {
+        const profile = this.state.users.find(u => u.id === userId);
+        const since = new Date(log.timestamp);
+        const elapsedMs = new Date() - since;
+        const h = Math.floor(elapsedMs / 3600000);
+        const m = Math.floor((elapsedMs % 3600000) / 60000);
+        return {
+          name: profile?.name || 'Desconocido',
+          initials: (profile?.name || 'XX').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+          feria: log.ferias?.name || 'Sin feria',
+          since: since.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+          elapsed: `${h}h ${m}m`,
+          elapsedMs,
+        };
+      })
+      .sort((a, b) => a.elapsedMs - b.elapsedMs);
+
+    const now = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const todayStr = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+    const todayFormatted = todayStr.charAt(0).toUpperCase() + todayStr.slice(1);
+
+    const cards = workingNow.length > 0
+      ? workingNow.map(w => `
+          <div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:1.5rem;box-shadow:0 2px 8px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:1rem;position:relative;overflow:hidden;">
+            <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#22c55e,#16a34a);"></div>
+            <div style="display:flex;align-items:center;gap:1rem;">
+              <div style="width:48px;height:48px;background:linear-gradient(135deg,#22c55e,#16a34a);border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;color:white;font-size:1.1rem;flex-shrink:0;">${w.initials}</div>
+              <div>
+                <div style="font-weight:700;font-size:1rem;color:var(--text-main);">${w.name}</div>
+                <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.15rem;">📍 ${w.feria}</div>
+              </div>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:0.4rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:99px;padding:0.3rem 0.75rem;">
+                <span style="width:7px;height:7px;background:#22c55e;border-radius:50%;display:inline-block;"></span>
+                <span style="font-size:0.78rem;font-weight:700;color:#16a34a;">Trabajando</span>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+              <div style="background:#f8fafc;border-radius:8px;padding:0.75rem;">
+                <div style="font-size:0.72rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Entrada</div>
+                <div style="font-weight:700;font-size:1rem;color:var(--text-main);margin-top:0.2rem;">${w.since}</div>
+              </div>
+              <div style="background:#f0fdf4;border-radius:8px;padding:0.75rem;">
+                <div style="font-size:0.72rem;color:#16a34a;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Tiempo trabajado</div>
+                <div style="font-weight:800;font-size:1rem;color:#15803d;margin-top:0.2rem;">${w.elapsed}</div>
+              </div>
+            </div>
+          </div>
+        `).join('')
+      : `<div style="grid-column:1/-1;text-align:center;padding:4rem 2rem;background:white;border-radius:14px;border:1px dashed #cbd5e1;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" style="margin:0 auto 1rem;display:block;"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+          <p style="font-size:1.1rem;font-weight:600;color:var(--text-secondary);">Nadie está trabajando ahora mismo</p>
+          <p style="font-size:0.875rem;color:var(--text-muted);margin-top:0.5rem;">Los empleados aparecerán aquí en cuanto fichen entrada.</p>
+        </div>`;
+
+    return `
+      <div style="margin-bottom:2rem;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <h1 style="font-size:1.5rem;font-weight:800;color:var(--text-main);">Dashboard en tiempo real</h1>
+          <p style="color:var(--text-secondary);margin-top:0.25rem;">${todayFormatted} · Actualizado a las ${now}</p>
+        </div>
+        <button onclick="app.switchView('dashboard')" style="display:flex;align-items:center;gap:0.5rem;background:white;border:1px solid #e2e8f0;border-radius:8px;padding:0.5rem 1rem;cursor:pointer;font-size:0.875rem;font-weight:600;color:var(--text-secondary);" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+          Actualizar
+        </button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2rem;">
+        <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:1.25rem 1.5rem;display:flex;align-items:center;gap:1rem;">
+          <div style="width:42px;height:42px;background:#f0fdf4;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+          </div>
+          <div>
+            <div style="font-size:1.75rem;font-weight:800;color:var(--text-main);">${workingNow.length}</div>
+            <div style="font-size:0.8rem;color:var(--text-secondary);font-weight:500;">Trabajando ahora</div>
+          </div>
+        </div>
+        <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:1.25rem 1.5rem;display:flex;align-items:center;gap:1rem;">
+          <div style="width:42px;height:42px;background:#eff6ff;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+          <div>
+            <div style="font-size:1.75rem;font-weight:800;color:var(--text-main);">${Object.keys(userLastLog).length}</div>
+            <div style="font-size:0.8rem;color:var(--text-secondary);font-weight:500;">Fichajes hoy</div>
+          </div>
+        </div>
+        <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:1.25rem 1.5rem;display:flex;align-items:center;gap:1rem;">
+          <div style="width:42px;height:42px;background:#faf5ff;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          </div>
+          <div>
+            <div style="font-size:1.75rem;font-weight:800;color:var(--text-main);">${[...new Set(logs.map(l => l.feria_id).filter(Boolean))].length}</div>
+            <div style="font-size:0.8rem;color:var(--text-secondary);font-weight:500;">Ferias activas hoy</div>
+          </div>
+        </div>
+      </div>
+
+      <h2 style="font-size:1rem;font-weight:700;color:var(--text-main);margin-bottom:1rem;">
+        Empleados en turno
+        ${workingNow.length > 0 ? `<span style="display:inline-flex;align-items:center;gap:0.3rem;margin-left:0.5rem;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;border-radius:99px;padding:0.15rem 0.6rem;font-size:0.78rem;font-weight:700;"><span style="width:6px;height:6px;background:#22c55e;border-radius:50%;"></span>${workingNow.length} activo${workingNow.length !== 1 ? 's' : ''}</span>` : ''}
+      </h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem;">
+        ${cards}
+      </div>
+    `;
   },
 
   async loadKioskData() {
