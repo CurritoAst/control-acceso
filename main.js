@@ -476,12 +476,13 @@ const app = {
   async loadDashboardData() {
     if (this.state.users.length === 0) await this.loadUsers();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const filterDate = new Date();
+    filterDate.setDate(filterDate.getDate() - 3); // Obtener 3 días atrás para capturar turnos abiertos
+    filterDate.setHours(0, 0, 0, 0);
     const { data: logs } = await supabase
       .from('time_logs')
       .select('*, ferias(id, name)')
-      .gte('timestamp', today.toISOString())
+      .gte('timestamp', filterDate.toISOString())
       .order('timestamp', { ascending: true });
 
     this.state.dashboardLogs = logs || [];
@@ -490,11 +491,16 @@ const app = {
   getDashboardHTML() {
     const logs = this.state.dashboardLogs || [];
 
-    // Agrupar logs por usuario y obtener el último evento de cada uno
+    // Agrupar logs por usuario y obtener el último evento de cada uno (dentro de los últimos 3 días)
     const userLastLog = {};
     logs.forEach(log => {
       userLastLog[log.user_id] = log;
     });
+
+    const beginOfToday = new Date().setHours(0, 0, 0, 0);
+    const todayLogs = logs.filter(l => new Date(l.timestamp).getTime() >= beginOfToday);
+    const todayUsersWithLogsCount = new Set(todayLogs.map(l => l.user_id)).size;
+    const todayActiveFeriasCount = new Set(todayLogs.map(l => l.feria_id).filter(Boolean)).size;
 
     // Filtrar los que están actualmente trabajando (último log = Entrada)
     const workingNow = Object.entries(userLastLog)
@@ -580,7 +586,7 @@ const app = {
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
           </div>
           <div>
-            <div style="font-size:1.75rem;font-weight:800;color:var(--text-main);">${Object.keys(userLastLog).length}</div>
+            <div style="font-size:1.75rem;font-weight:800;color:var(--text-main);">${todayUsersWithLogsCount}</div>
             <div style="font-size:0.8rem;color:var(--text-secondary);font-weight:500;">Fichajes hoy</div>
           </div>
         </div>
@@ -589,7 +595,7 @@ const app = {
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
           </div>
           <div>
-            <div style="font-size:1.75rem;font-weight:800;color:var(--text-main);">${[...new Set(logs.map(l => l.feria_id).filter(Boolean))].length}</div>
+            <div style="font-size:1.75rem;font-weight:800;color:var(--text-main);">${todayActiveFeriasCount}</div>
             <div style="font-size:0.8rem;color:var(--text-secondary);font-weight:500;">Ferias activas hoy</div>
           </div>
         </div>
@@ -612,11 +618,12 @@ const app = {
     const { data: feriaWorkers } = await supabase.from('feria_workers').select('*');
     this.state.feriaWorkers = feriaWorkers || [];
 
-    const today = new Date();
-    today.setHours(0,0,0,0);
+    const filterDate = new Date();
+    filterDate.setDate(filterDate.getDate() - 3); // Obtener hasta 3 días para ver quién fichó Entrada ayer
+    filterDate.setHours(0,0,0,0);
     const { data: logs } = await supabase.from('time_logs')
       .select('*')
-      .gte('timestamp', today.toISOString())
+      .gte('timestamp', filterDate.toISOString())
       .order('timestamp', { ascending: true });
 
     this.state.allTodayLogs = logs || [];
