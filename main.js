@@ -1688,16 +1688,31 @@ window.openShiftModal = function(opts) {
     const saveBtn = document.getElementById('shiftSaveBtn');
     saveBtn.disabled = true; saveBtn.textContent = 'Guardando...';
 
+    const fail = msg => { errEl.textContent = msg; errEl.style.display='block'; saveBtn.disabled=false; saveBtn.textContent = isEdit ? 'Guardar cambios' : 'Crear turno'; };
+
     if (isEdit) {
-      const { error: e1 } = await supabase.from('time_logs').update({ timestamp: entryDate.toISOString() }).eq('id', opts.entryLogId);
-      const { error: e2 } = await supabase.from('time_logs').update({ timestamp: exitDate.toISOString() }).eq('id', opts.exitLogId);
-      if (e1 || e2) { errEl.textContent = 'Error al guardar: ' + ((e1||e2).message); errEl.style.display='block'; saveBtn.disabled=false; saveBtn.textContent='Guardar cambios'; return; }
+      const { data: d1, error: e1 } = await supabase
+        .from('time_logs')
+        .update({ timestamp: entryDate.toISOString() })
+        .eq('id', opts.entryLogId)
+        .select();
+      if (e1) { fail('Error al guardar entrada: ' + e1.message); return; }
+      if (!d1 || d1.length === 0) { fail('No se actualizó la entrada. Revisa permisos RLS (ejecuta el bloque 4 de schema.sql en Supabase).'); return; }
+
+      const { data: d2, error: e2 } = await supabase
+        .from('time_logs')
+        .update({ timestamp: exitDate.toISOString() })
+        .eq('id', opts.exitLogId)
+        .select();
+      if (e2) { fail('Error al guardar salida: ' + e2.message); return; }
+      if (!d2 || d2.length === 0) { fail('No se actualizó la salida. Revisa permisos RLS.'); return; }
     } else {
-      const { error } = await supabase.from('time_logs').insert([
+      const { data, error } = await supabase.from('time_logs').insert([
         { user_id: opts.userId, feria_id: opts.feriaId, action_type: 'Entrada', timestamp: entryDate.toISOString() },
         { user_id: opts.userId, feria_id: opts.feriaId, action_type: 'Salida',  timestamp: exitDate.toISOString() },
-      ]);
-      if (error) { errEl.textContent = 'Error al crear turno: ' + error.message; errEl.style.display='block'; saveBtn.disabled=false; saveBtn.textContent='Crear turno'; return; }
+      ]).select();
+      if (error) { fail('Error al crear turno: ' + error.message); return; }
+      if (!data || data.length < 2) { fail('No se crearon los fichajes. Revisa permisos RLS.'); return; }
     }
 
     overlay.remove();
@@ -1713,8 +1728,9 @@ window.deleteShiftAdmin = async function(entryLogId, exitLogId, userId, userName
   if (!isAdmin) { alert('Solo los administradores pueden eliminar turnos.'); return; }
   if (!confirm('¿Seguro que quieres eliminar este turno? Se borrarán la entrada y la salida.')) return;
   const ids = [entryLogId, exitLogId].filter(Boolean);
-  const { error } = await supabase.from('time_logs').delete().in('id', ids);
+  const { data, error } = await supabase.from('time_logs').delete().in('id', ids).select();
   if (error) { alert('Error eliminando el turno: ' + error.message); return; }
+  if (!data || data.length === 0) { alert('No se eliminó ningún fichaje. Revisa los permisos de admin (RLS DELETE en schema.sql).'); return; }
   await app.loadUsers();
   if (app.state.activeView === 'users') app.renderView('users');
   const modal = document.getElementById('horasFeriaModal');
