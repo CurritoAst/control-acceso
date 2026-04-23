@@ -857,15 +857,15 @@ const app = {
       </div>
 
       ${isAdmin ? `
-      <div class="card" style="margin-bottom:2rem;padding:1.5rem;background:#f8fafc;border:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;border-radius:12px;">
+      <div class="card global-rate-card" style="margin-bottom:2rem;flex-direction:row;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
         <div>
            <h3 style="font-size:1.05rem;font-weight:700;color:var(--text-main);margin:0;">Tarifa Global por Defecto</h3>
            <p style="font-size:0.85rem;color:var(--text-secondary);margin:0.25rem 0 0;">Establece el precio por hora para todos los trabajadores simultáneamente.</p>
         </div>
         <div style="display:flex;align-items:center;gap:0.75rem;">
-           <input type="number" id="globalRateInput" value="10" step="0.5" style="width:80px;padding:0.6rem;border-radius:8px;border:1px solid #cbd5e1;text-align:right;font-size:1rem;font-weight:600;">
+           <input type="number" id="globalRateInput" value="10" step="0.5" class="input-field" style="width:90px;text-align:right;font-weight:700;">
            <span style="font-weight:600;color:var(--text-secondary);">€/h</span>
-           <button id="applyGlobalRateBtn" class="btn btn-primary" onclick="app.applyGlobalRate()" style="padding:0.6rem 1.25rem;font-weight:600;">Aplicar a todos</button>
+           <button id="applyGlobalRateBtn" class="btn btn-primary" onclick="app.applyGlobalRate()">Aplicar a todos</button>
         </div>
       </div>
       ` : ''}
@@ -938,93 +938,247 @@ const app = {
 
   async viewUserHistory(id, name) {
     this.state.viewedUserName = name;
+    this.state.viewedUserId = id;
+    this.state.viewedUserLogs = [];
+    this.state.viewedUserError = null;
     document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
     this.state.activeView = 'user-history';
-    const { data: logs } = await supabase.from('time_logs').select('*').eq('user_id', id).order('timestamp', { ascending: true });
-    this.state.viewedUserLogs = logs || [];
+    // Pintar pantalla de carga inmediata
+    this.renderView('user-history');
+
+    const { data: logs, error } = await supabase
+      .from('time_logs')
+      .select('id, timestamp, action_type, latitude, longitude, feria_id, caseta_id, hourly_rate, ferias(name, base_hourly_rate), casetas(name)')
+      .eq('user_id', id)
+      .order('timestamp', { ascending: true });
+
+    if (error) {
+      this.state.viewedUserError = error.message || 'Error desconocido al cargar registros.';
+    } else {
+      this.state.viewedUserLogs = logs || [];
+    }
     this.renderView('user-history');
   },
 
   getUserHistoryHTML() {
+    const userName = this.state.viewedUserName || 'Empleado';
+    const errorMsg = this.state.viewedUserError;
+    const logs = this.state.viewedUserLogs || [];
+
+    // Agrupar por dia y emparejar Entrada/Salida correctamente, incluso turnos cruzados.
     const logsByDay = {};
-    this.state.viewedUserLogs.forEach(log => {
-      const dateStr = new Date(log.timestamp).toLocaleDateString('es-ES');
-      if (!logsByDay[dateStr]) logsByDay[dateStr] = { logs: [], totalMs: 0, lastIn: null, inLoc: null, outLoc: null };
-      
-      const dayData = logsByDay[dateStr];
-      dayData.logs.push(log);
-      
+    let openShift = null; // Entrada sin Salida pareja a traves de los dias
+    let totalMsAll = 0;
+    let totalEarningsAll = 0;
+    const feriasSet = new Set();
+
+    logs.forEach(log => {
+      const ts = new Date(log.timestamp);
+      const dateKey = ts.toISOString().slice(0, 10); // YYYY-MM-DD para orden estable
+      const dateStr = ts.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+      if (!logsByDay[dateKey]) {
+        logsByDay[dateKey] = { dateStr, dateKey, events: [], totalMs: 0, openAtEod: false };
+      }
+      const day = logsByDay[dateKey];
+
+      if (log.feria_id) feriasSet.add(log.feria_id);
+
       if (log.action_type === 'Entrada') {
-        dayData.lastIn = new Date(log.timestamp);
-        if (!dayData.inLoc) dayData.inLoc = { lat: log.latitude, lon: log.longitude };
-      } else if (log.action_type === 'Salida') {
-        if (dayData.lastIn) {
-          dayData.totalMs += new Date(log.timestamp) - dayData.lastIn;
-          dayData.lastIn = null;
+        if (openShift) {
+          // Entrada nueva sin salida previa: marcar la anterior como abierta
+          openShift.unmatched = true;
         }
-        dayData.outLoc = { lat: log.latitude, lon: log.longitude };
+        openShift = { startLog: log, startTs: ts, dayKey: dateKey };
+        day.events.push({ log, ts, type: 'Entrada', paired: false, durationMs: null, paireWith: null });
+      } else if (log.action_type === 'Salida') {
+        if (openShift) {
+          const ms = ts - openShift.startTs;
+          day.totalMs += ms;
+          totalMsAll += ms;
+          const hourlyRate = Number(openShift.startLog.hourly_rate) > 0
+            ? Number(openShift.startLog.hourly_rate)
+            : Number(openShift.startLog.ferias?.base_hourly_rate) > 0
+              ? Number(openShift.startLog.ferias.base_hourly_rate)
+              : 10;
+          totalEarningsAll += (ms / 3600000) * hourlyRate;
+          // Marcar el evento Entrada como emparejado (puede estar en otro dia)
+          const entradaDay = logsByDay[openShift.dayKey];
+          if (entradaDay) {
+            const entradaEv = [...entradaDay.events].reverse().find(e => e.type === 'Entrada' && e.log.id === openShift.startLog.id);
+            if (entradaEv) { entradaEv.paired = true; entradaEv.durationMs = ms; entradaEv.salidaTs = ts; }
+          }
+          day.events.push({ log, ts, type: 'Salida', paired: true, durationMs: ms, entradaTs: openShift.startTs });
+          openShift = null;
+        } else {
+          // Salida sin Entrada previa: huerfana
+          day.events.push({ log, ts, type: 'Salida', paired: false, durationMs: null, orphan: true });
+        }
       }
     });
 
-    const daysList = Object.keys(logsByDay).sort((a,b) => {
-      const pA = a.split('/'); const dtA = new Date(pA[2], pA[1]-1, pA[0]);
-      const pB = b.split('/'); const dtB = new Date(pB[2], pB[1]-1, pB[0]);
-      return dtB - dtA;
-    });
-
-    const historyHTML = daysList.map(dateStr => {
-      const dayData = logsByDay[dateStr];
-      let ms = dayData.totalMs;
-      
-      const isWorkingUnfinished = dayData.lastIn !== null && daysList[0] === dateStr && new Date().toLocaleDateString('es-ES') === dateStr;
-      if (isWorkingUnfinished) {
-        ms += new Date() - dayData.lastIn;
+    // Si quedo un openShift al final y es de hoy, sumamos tiempo en vivo
+    let liveExtraMs = 0;
+    let liveSinceTs = null;
+    if (openShift) {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      if (openShift.dayKey === todayKey) {
+        liveExtraMs = new Date() - openShift.startTs;
+        liveSinceTs = openShift.startTs;
+        const dayLive = logsByDay[openShift.dayKey];
+        if (dayLive) dayLive.openAtEod = true;
+      } else {
+        const dayOld = logsByDay[openShift.dayKey];
+        if (dayOld) dayOld.openAtEod = true;
       }
-      
-      const h = Math.floor(ms / 1000 / 60 / 60);
-      const m = Math.floor((ms / 1000 / 60) % 60);
-      
-      const inLink = dayData.inLoc && dayData.inLoc.lat ? `<a href="https://www.google.com/maps?q=${dayData.inLoc.lat},${dayData.inLoc.lon}" target="_blank" style="color:var(--success-text);text-decoration:underline;display:flex;align-items:center;gap:0.3rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg> Mapa (Entrada)</a>` : '<span style="color:var(--text-muted)">🚫 Sin GPS detectado</span>';
-      
-      const outLink = dayData.outLoc && dayData.outLoc.lat ? `<a href="https://www.google.com/maps?q=${dayData.outLoc.lat},${dayData.outLoc.lon}" target="_blank" style="color:var(--error-text);text-decoration:underline;display:flex;align-items:center;gap:0.3rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg> Mapa (Salida)</a>` : '<span style="color:var(--text-muted)">🚫 Aún trabajando o sin GPS</span>';
+    }
 
-      const statusText = isWorkingUnfinished ? '<span style="color:var(--warning-text);font-weight:600;background:#fefce8;padding:0.25rem 0.5rem;border-radius:6px;border:1px solid #fef08a;">(Aún en su turno)</span>' : `<span style="font-weight:700;">${h}h ${m}m </span>`;
+    const daysList = Object.keys(logsByDay).sort((a, b) => b.localeCompare(a));
+
+    // Helpers
+    const fmtTime = ts => ts.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const fmtDur = ms => {
+      if (!ms || ms < 0) return '—';
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      return `${h}h ${m.toString().padStart(2, '0')}m`;
+    };
+    const mapLink = (lat, lon, label, color) => {
+      if (lat == null || lon == null) {
+        return `<span style="display:inline-flex;align-items:center;gap:0.3rem;color:var(--text-muted);font-size:0.78rem;font-weight:500;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+          Sin GPS
+        </span>`;
+      }
+      return `<a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:0.3rem;color:${color};font-weight:600;font-size:0.78rem;text-decoration:none;border:1px solid currentColor;padding:0.2rem 0.55rem;border-radius:99px;background:rgba(255,255,255,0.04);">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        ${label}
+      </a>`;
+    };
+
+    // Resumen superior
+    const totalHrs = Math.floor((totalMsAll + liveExtraMs) / 3600000);
+    const totalMin = Math.floor(((totalMsAll + liveExtraMs) % 3600000) / 60000);
+    const punchCount = logs.length;
+    const firstLog = logs[0] ? new Date(logs[0].timestamp) : null;
+    const lastLog = logs[logs.length - 1] ? new Date(logs[logs.length - 1].timestamp) : null;
+    const firstLogStr = firstLog ? firstLog.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+    const lastLogStr = lastLog ? lastLog.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+    // Tarjetas resumen
+    const summaryHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:2rem;">
+        <div class="card">
+          <div class="card-title">Horas totales</div>
+          <div class="card-value" style="color:var(--primary);">${totalHrs}h ${totalMin.toString().padStart(2,'0')}m</div>
+          ${liveExtraMs > 0 ? `<div class="card-trend trend-up">● En turno desde ${fmtTime(liveSinceTs)}</div>` : ''}
+        </div>
+        <div class="card">
+          <div class="card-title">Ganancias estimadas</div>
+          <div class="card-value" style="color:var(--success-text);">${(totalEarningsAll).toFixed(2)} €</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Fichajes registrados</div>
+          <div class="card-value">${punchCount}</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);">${daysList.length} día${daysList.length !== 1 ? 's' : ''} con actividad</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Periodo</div>
+          <div style="font-size:0.95rem;font-weight:700;color:var(--text-main);line-height:1.4;">${firstLogStr}</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);">hasta ${lastLogStr}</div>
+        </div>
+      </div>
+    `;
+
+    // Render por día
+    const historyHTML = daysList.map(dateKey => {
+      const day = logsByDay[dateKey];
+      const dayMs = day.totalMs + (dateKey === new Date().toISOString().slice(0, 10) ? liveExtraMs : 0);
+
+      const eventsHTML = day.events.map(ev => {
+        const isIn = ev.type === 'Entrada';
+        const accent = isIn ? 'var(--success-solid)' : 'var(--error-solid)';
+        const accentSoft = isIn ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)';
+        const accentText = isIn ? 'var(--success-text)' : 'var(--error-text)';
+        const icon = isIn
+          ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>'
+          : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>';
+
+        const feriaLbl = ev.log.ferias?.name ? `· ${ev.log.ferias.name}` : '';
+        const casetaLbl = ev.log.casetas?.name ? ` / ${ev.log.casetas.name}` : '';
+
+        let extra = '';
+        if (isIn && ev.paired) extra = `<span style="font-size:0.78rem;color:var(--text-secondary);">→ Salida ${fmtTime(ev.salidaTs)} · <strong style="color:var(--text-main);">${fmtDur(ev.durationMs)}</strong></span>`;
+        else if (isIn && !ev.paired) extra = `<span style="font-size:0.78rem;font-weight:600;color:var(--warning-text);">⏳ Sin salida registrada</span>`;
+        else if (!isIn && ev.paired) extra = `<span style="font-size:0.78rem;color:var(--text-secondary);">← Entrada ${fmtTime(ev.entradaTs)} · <strong style="color:var(--text-main);">${fmtDur(ev.durationMs)}</strong></span>`;
+        else if (!isIn && ev.orphan) extra = `<span style="font-size:0.78rem;font-weight:600;color:var(--warning-text);">⚠️ Salida sin entrada previa</span>`;
+
+        return `
+          <div style="display:flex;align-items:center;gap:0.85rem;padding:0.75rem 1rem;border-radius:10px;background:${accentSoft};border:1px solid ${accent}33;">
+            <div style="width:32px;height:32px;border-radius:50%;background:${accent};color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px -4px ${accent};">${icon}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                <span style="font-weight:700;color:${accentText};font-size:0.92rem;">${ev.type}</span>
+                <span style="font-weight:800;color:var(--text-main);font-size:1.05rem;font-variant-numeric:tabular-nums;letter-spacing:-0.01em;">${fmtTime(ev.ts)}</span>
+                <span style="font-size:0.78rem;color:var(--text-secondary);">${feriaLbl}${casetaLbl}</span>
+              </div>
+              ${extra ? `<div style="margin-top:0.2rem;">${extra}</div>` : ''}
+            </div>
+            <div style="flex-shrink:0;">${mapLink(ev.log.latitude, ev.log.longitude, isIn ? 'Mapa entrada' : 'Mapa salida', accent)}</div>
+          </div>
+        `;
+      }).join('');
+
+      const dayDateLabel = day.dateStr.charAt(0).toUpperCase() + day.dateStr.slice(1);
 
       return `
-        <div style="padding:1.5rem;background:white;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:1.5rem;box-shadow:var(--shadow-sm);">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;border-bottom:1px solid #f8fafc;padding-bottom:1rem;">
-            <div style="font-size:1.125rem;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:0.5rem;">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--primary);"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-              Jornada del ${dateStr}
+        <div class="card" style="padding:1.25rem 1.5rem;margin-bottom:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;padding-bottom:0.85rem;border-bottom:1px solid var(--divider);margin-bottom:1rem;">
+            <div style="display:flex;align-items:center;gap:0.6rem;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--primary);"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+              <span style="font-weight:700;color:var(--text-main);font-size:1rem;">${dayDateLabel}</span>
+              <span style="font-size:0.78rem;color:var(--text-secondary);">· ${day.events.length} fichaje${day.events.length !== 1 ? 's' : ''}</span>
             </div>
-            <div style="font-size:1.125rem;">${statusText}</div>
+            <div style="display:flex;align-items:center;gap:0.6rem;">
+              ${day.openAtEod && dateKey === new Date().toISOString().slice(0, 10) ? '<span class="badge" style="background:rgba(217,119,6,0.18);color:#fbbf24;">En curso</span>' : ''}
+              <span style="font-size:1rem;font-weight:800;color:var(--primary);font-variant-numeric:tabular-nums;letter-spacing:-0.01em;">${fmtDur(dayMs)}</span>
+            </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;">
-            <div style="display:flex;flex-direction:column;gap:0.75rem;padding:1rem;background:#f8fafc;border-radius:8px;">
-              <span style="font-weight:700;color:var(--success-text);">Hora de Entrada</span>
-              ${inLink}
-            </div>
-            <div style="display:flex;flex-direction:column;gap:0.75rem;padding:1rem;background:#f8fafc;border-radius:8px;">
-              <span style="font-weight:700;color:var(--error-text);">Hora de Salida Final</span>
-              ${outLink}
-            </div>
+          <div style="display:flex;flex-direction:column;gap:0.55rem;">
+            ${eventsHTML}
           </div>
         </div>
       `;
-    }).join('') || '<div style="text-align:center;padding:4rem;background:white;border-radius:12px;border:1px dashed #cbd5e1;"><p style="color:var(--text-muted);font-size:1rem;">Este empleado no tiene registros en el sistema todavía.</p></div>';
+    }).join('');
+
+    const emptyHTML = `
+      <div class="empty">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin:0 auto 0.75rem;display:block;color:var(--text-muted);"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        <p style="font-size:1rem;font-weight:600;color:var(--text-main);">Sin registros todavía</p>
+        <p style="font-size:0.875rem;color:var(--text-secondary);margin-top:0.35rem;">Este empleado aún no ha fichado en el sistema.</p>
+      </div>
+    `;
+
+    const errorHTML = errorMsg ? `
+      <div style="padding:1rem 1.25rem;background:var(--error-bg);color:var(--error-text);border-radius:var(--radius-md);border:1px solid currentColor;margin-bottom:1.5rem;font-size:0.9rem;">
+        <strong>No se pudieron cargar los registros:</strong> ${errorMsg}
+      </div>` : '';
 
     return `
-      <div style="margin-bottom:2.5rem;display:flex;align-items:center;gap:1.5rem;">
-        <button class="btn btn-ghost" onclick="app.switchView('users')" style="padding:0.75rem;background:white;border:1px solid #e2e8f0;border-radius:50%;box-shadow:var(--shadow-sm);transition:all 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='none'">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      <div style="margin-bottom:1.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+        <button class="btn btn-ghost" onclick="app.switchView('users')" title="Volver al directorio" style="padding:0.55rem 0.9rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+          Volver
         </button>
-        <div>
-          <h1 style="font-size:1.75rem;font-weight:800;letter-spacing:-0.02em;">Historial Laboral: ${this.state.viewedUserName}</h1>
-          <p style="color:var(--text-secondary);font-size:1rem;margin-top:0.25rem;">Registro de asistencia detallado y ubicaciones GPS de conexión/desconexión.</p>
+        <div style="flex:1;min-width:200px;">
+          <h1 style="font-size:1.5rem;font-weight:800;letter-spacing:-0.02em;color:var(--text-main);">Historial de ${userName}</h1>
+          <p style="color:var(--text-secondary);font-size:0.9rem;margin-top:0.15rem;">Fichajes detallados con horas y ubicación GPS de cada evento.</p>
         </div>
       </div>
-      <div style="max-width:850px;margin-left:0;">
-        ${historyHTML}
+      ${errorHTML}
+      ${logs.length > 0 ? summaryHTML : ''}
+      <div style="max-width:920px;">
+        ${logs.length > 0 ? historyHTML : (errorMsg ? '' : emptyHTML)}
       </div>
     `;
   },
@@ -1529,10 +1683,10 @@ window.showHorasPorFeria = async function(userId, userName, hourlyRate) {
 
   const overlay = document.createElement('div');
   overlay.id = 'horasFeriaModal';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px);';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);';
   overlay.innerHTML = `
-    <div style="background:white;border-radius:16px;padding:2rem;max-width:760px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,0.15);">
-      <div style="text-align:center;padding:2rem;color:var(--text-secondary);">Cargando datos...</div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:18px;padding:2rem;max-width:760px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:var(--shadow-xl);color:var(--text-main);">
+      <div style="text-align:center;padding:2rem;color:var(--text-secondary);">Cargando datos…</div>
     </div>`;
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
@@ -1658,24 +1812,24 @@ window.showHorasPorFeria = async function(userId, userName, hourlyRate) {
               ? `<span style="color:#2563eb;font-weight:700;">${t.shiftRate.toFixed(2)}€</span>`
               : `<span style="color:#94a3b8;font-size:0.75rem;">${(t.effectiveRate||0).toFixed(2)}€</span>`;
             const actionsCell = isAdmin && !t.active
-              ? `<td style="padding:0.6rem 0.75rem;text-align:center;border-bottom:1px solid #f1f5f9;white-space:nowrap;">
-                  <button onclick="window.openShiftModal({mode:'edit',userId:'${userId}',userName:'${userName.replace(/'/g, "\\'")}',hourlyRate:${hourlyRate},feriaId:'${feriaId}',entryLogId:'${t.entryLogId}',exitLogId:'${t.exitLogId}',entryIso:'${t.entryIso}',exitIso:'${t.exitIso}',shiftRate:${t.shiftRate||0}})" title="Editar turno" style="background:none;border:none;cursor:pointer;padding:0.25rem;border-radius:4px;color:#2563eb;" onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='none'">
+              ? `<td style="padding:0.6rem 0.75rem;text-align:center;border-bottom:1px solid var(--divider);white-space:nowrap;">
+                  <button class="shift-action-btn shift-edit" onclick="window.openShiftModal({mode:'edit',userId:'${userId}',userName:'${userName.replace(/'/g, "\\'")}',hourlyRate:${hourlyRate},feriaId:'${feriaId}',entryLogId:'${t.entryLogId}',exitLogId:'${t.exitLogId}',entryIso:'${t.entryIso}',exitIso:'${t.exitIso}',shiftRate:${t.shiftRate||0}})" title="Editar turno">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                   </button>
-                  <button onclick="window.deleteShiftAdmin('${t.entryLogId}','${t.exitLogId}','${userId}','${userName.replace(/'/g, "\\'")}',${hourlyRate})" title="Eliminar turno" style="background:none;border:none;cursor:pointer;padding:0.25rem;border-radius:4px;color:#dc2626;margin-left:0.25rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='none'">
+                  <button class="shift-action-btn shift-delete" onclick="window.deleteShiftAdmin('${t.entryLogId}','${t.exitLogId}','${userId}','${userName.replace(/'/g, "\\'")}',${hourlyRate})" title="Eliminar turno">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                   </button>
                  </td>`
               : isAdmin
-                ? `<td style="padding:0.6rem 0.75rem;text-align:center;border-bottom:1px solid #f1f5f9;color:var(--text-muted);font-size:0.75rem;">—</td>`
+                ? `<td style="padding:0.6rem 0.75rem;text-align:center;border-bottom:1px solid var(--divider);color:var(--text-muted);font-size:0.75rem;">—</td>`
                 : '';
             return `
-              <tr style="background:${idx % 2 === 0 ? '#fafafa' : 'white'};">
-                <td style="padding:0.6rem 1rem 0.6rem 2rem;font-size:0.82rem;color:var(--text-secondary);border-bottom:1px solid #f1f5f9;">${dayKey}</td>
-                <td style="padding:0.6rem 0.75rem;font-size:0.85rem;font-weight:600;color:#16a34a;border-bottom:1px solid #f1f5f9;">${t.entryTime}</td>
-                <td style="padding:0.6rem 0.75rem;font-size:0.85rem;border-bottom:1px solid #f1f5f9;">${exitLabel}</td>
-                <td style="padding:0.6rem 0.75rem;text-align:right;font-weight:700;font-size:0.9rem;color:var(--primary);border-bottom:1px solid #f1f5f9;">${fmtMs(t.ms)}</td>
-                ${isAdmin ? `<td style="padding:0.6rem 0.75rem;text-align:right;font-size:0.82rem;border-bottom:1px solid #f1f5f9;">${rateLabel}<br><span style="color:#16a34a;font-weight:700;font-size:0.8rem;">${((t.ms/3600000)*(t.effectiveRate||0)).toFixed(2)}€</span></td>` : ''}
+              <tr style="background:${idx % 2 === 0 ? 'var(--bg-muted)' : 'var(--bg-card)'};">
+                <td style="padding:0.7rem 1rem 0.7rem 2rem;font-size:0.82rem;font-weight:600;color:var(--text-main);border-bottom:1px solid var(--divider);">${dayKey}</td>
+                <td style="padding:0.7rem 0.75rem;font-size:0.9rem;font-weight:700;color:var(--success-text);border-bottom:1px solid var(--divider);font-variant-numeric:tabular-nums;">${t.entryTime}</td>
+                <td style="padding:0.7rem 0.75rem;font-size:0.9rem;font-weight:700;color:var(--text-main);border-bottom:1px solid var(--divider);font-variant-numeric:tabular-nums;">${exitLabel}</td>
+                <td style="padding:0.7rem 0.75rem;text-align:right;font-weight:800;font-size:0.92rem;color:var(--primary);border-bottom:1px solid var(--divider);font-variant-numeric:tabular-nums;letter-spacing:-0.01em;">${fmtMs(t.ms)}</td>
+                ${isAdmin ? `<td style="padding:0.7rem 0.75rem;text-align:right;font-size:0.82rem;border-bottom:1px solid var(--divider);">${rateLabel}<br><span style="color:var(--success-text);font-weight:800;font-size:0.85rem;font-variant-numeric:tabular-nums;">${((t.ms/3600000)*(t.effectiveRate||0)).toFixed(2)}€</span></td>` : ''}
                 ${actionsCell}
               </tr>`;
           }).join('');
@@ -1683,10 +1837,10 @@ window.showHorasPorFeria = async function(userId, userName, hourlyRate) {
           const dayEarnings = dayData.turnos.reduce((s, t) => s + (t.ms/3600000)*(t.effectiveRate||0), 0);
           const subtotalColspan = isAdmin ? 4 : 3;
           const subtotal = dayData.turnos.length > 1
-            ? `<tr style="background:#eff6ff;">
-                <td colspan="${subtotalColspan}" style="padding:0.35rem 1rem 0.35rem 2rem;font-size:0.75rem;color:#2563eb;font-weight:600;border-bottom:1px solid #dbeafe;">Total del día</td>
-                <td style="padding:0.35rem 1rem 0.35rem 0.75rem;text-align:right;font-weight:800;font-size:0.82rem;color:#1d4ed8;border-bottom:1px solid #dbeafe;">${fmtMs(dayData.totalMs)}</td>
-                ${isAdmin ? `<td style="padding:0.35rem 0.75rem;text-align:right;font-weight:800;font-size:0.82rem;color:#16a34a;border-bottom:1px solid #dbeafe;">${dayEarnings.toFixed(2)}€</td><td style="border-bottom:1px solid #dbeafe;"></td>` : ''}
+            ? `<tr style="background:var(--primary-soft);">
+                <td colspan="${subtotalColspan}" style="padding:0.4rem 1rem 0.4rem 2rem;font-size:0.75rem;color:var(--primary);font-weight:700;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;">Total del día</td>
+                <td style="padding:0.4rem 1rem 0.4rem 0.75rem;text-align:right;font-weight:800;font-size:0.85rem;color:var(--primary);border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;">${fmtMs(dayData.totalMs)}</td>
+                ${isAdmin ? `<td style="padding:0.4rem 0.75rem;text-align:right;font-weight:800;font-size:0.85rem;color:var(--success-text);border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;">${dayEarnings.toFixed(2)}€</td><td style="border-bottom:1px solid var(--border);"></td>` : ''}
                </tr>`
             : '';
 
@@ -1695,36 +1849,41 @@ window.showHorasPorFeria = async function(userId, userName, hourlyRate) {
 
         const isRealFeria = feriaId && feriaId !== '__sin_feria__';
         const addBtn = isAdmin && isRealFeria
-          ? `<div style="padding:0.6rem 1rem;background:#fafafa;border-top:1px solid #e2e8f0;text-align:center;">
-              <button onclick="window.openShiftModal({mode:'add',userId:'${userId}',userName:'${userName.replace(/'/g, "\\'")}',hourlyRate:${hourlyRate},feriaId:'${feriaId}',feriaName:'${(f.name || '').replace(/'/g, "\\'")}',feriaStart:'${f.start || ''}',feriaEnd:'${f.end || ''}'})" style="background:#2563eb;color:white;border:none;padding:0.5rem 1rem;border-radius:8px;cursor:pointer;font-size:0.8rem;font-weight:600;display:inline-flex;align-items:center;gap:0.4rem;" onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          ? `<div style="padding:0.75rem 1rem;background:var(--bg-muted);border-top:1px solid var(--divider);text-align:center;">
+              <button class="btn btn-primary" onclick="window.openShiftModal({mode:'add',userId:'${userId}',userName:'${userName.replace(/'/g, "\\'")}',hourlyRate:${hourlyRate},feriaId:'${feriaId}',feriaName:'${(f.name || '').replace(/'/g, "\\'")}',feriaStart:'${f.start || ''}',feriaEnd:'${f.end || ''}'})" style="font-size:0.82rem;padding:0.5rem 1.1rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 Añadir turno manual
               </button>
              </div>`
           : '';
         return `
-          <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:1.25rem;">
-            <div style="background:linear-gradient(90deg,#f8fafc,#f1f5f9);padding:0.9rem 1rem;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0;">
+          <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:1.25rem;background:var(--bg-card);box-shadow:var(--shadow-sm);">
+            <div style="padding:1rem 1.25rem;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--divider);background:var(--bg-muted);">
               <div>
-                <div style="font-weight:700;font-size:0.95rem;color:var(--text-main);">📌 ${f.name}</div>
-                ${f.baseRate > 0 ? `<div style="font-size:0.75rem;color:#16a34a;margin-top:0.15rem;font-weight:700;">💰 ${f.baseRate} €/h (Tarifa de feria)</div>` : ''}
-                ${f.start ? `<div style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.15rem;">📅 ${f.start} — ${f.end}</div>` : ''}
+                <div style="font-weight:700;font-size:0.98rem;color:var(--text-main);display:flex;align-items:center;gap:0.4rem;">
+                  <span style="display:inline-flex;width:24px;height:24px;border-radius:6px;background:var(--primary-soft);color:var(--primary);align-items:center;justify-content:center;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                  </span>
+                  ${f.name}
+                </div>
+                ${f.baseRate > 0 ? `<div style="font-size:0.76rem;color:var(--success-text);margin-top:0.3rem;font-weight:700;">${f.baseRate} €/h · Tarifa de feria</div>` : ''}
+                ${f.start ? `<div style="font-size:0.76rem;color:var(--text-secondary);margin-top:0.2rem;">${f.start} — ${f.end}</div>` : ''}
               </div>
               <div style="text-align:right;">
-                <div style="font-weight:800;font-size:1.1rem;color:var(--primary);">${fmtMs(f.totalMs)}</div>
-                <div style="font-size:0.72rem;color:var(--text-secondary);">${dayEntries.length} día${dayEntries.length !== 1 ? 's' : ''}</div>
-                ${isAdmin && (f.totalEarnings||0) > 0 ? `<div style="margin-top:0.3rem;font-weight:700;font-size:0.9rem;color:#16a34a;">${(f.totalEarnings||0).toFixed(2)} €</div>` : ''}
+                <div style="font-weight:800;font-size:1.15rem;color:var(--primary);font-variant-numeric:tabular-nums;letter-spacing:-0.01em;">${fmtMs(f.totalMs)}</div>
+                <div style="font-size:0.72rem;color:var(--text-secondary);margin-top:0.1rem;">${dayEntries.length} día${dayEntries.length !== 1 ? 's' : ''}</div>
+                ${isAdmin && (f.totalEarnings||0) > 0 ? `<div style="margin-top:0.3rem;font-weight:800;font-size:0.95rem;color:var(--success-text);font-variant-numeric:tabular-nums;">${(f.totalEarnings||0).toFixed(2)} €</div>` : ''}
               </div>
             </div>
             <table style="width:100%;border-collapse:collapse;">
               <thead>
-                <tr style="background:#f8fafc;">
-                  <th style="padding:0.5rem 1rem 0.5rem 2rem;text-align:left;font-size:0.72rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #e2e8f0;">Día</th>
-                  <th style="padding:0.5rem 0.75rem;text-align:left;font-size:0.72rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #e2e8f0;">Entrada</th>
-                  <th style="padding:0.5rem 0.75rem;text-align:left;font-size:0.72rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #e2e8f0;">Salida</th>
-                  <th style="padding:0.5rem 1rem 0.5rem 0.75rem;text-align:right;font-size:0.72rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #e2e8f0;">Horas</th>
-                  ${isAdmin ? `<th style="padding:0.5rem 0.75rem;text-align:right;font-size:0.72rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #e2e8f0;">A Cobrar</th>
-                  <th style="padding:0.5rem 0.75rem;text-align:center;font-size:0.72rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid #e2e8f0;">Acciones</th>` : ''}
+                <tr style="background:var(--bg-subtle);">
+                  <th style="padding:0.55rem 1rem 0.55rem 2rem;text-align:left;font-size:0.7rem;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--divider);">Día</th>
+                  <th style="padding:0.55rem 0.75rem;text-align:left;font-size:0.7rem;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--divider);">Entrada</th>
+                  <th style="padding:0.55rem 0.75rem;text-align:left;font-size:0.7rem;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--divider);">Salida</th>
+                  <th style="padding:0.55rem 1rem 0.55rem 0.75rem;text-align:right;font-size:0.7rem;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--divider);">Horas</th>
+                  ${isAdmin ? `<th style="padding:0.55rem 0.75rem;text-align:right;font-size:0.7rem;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--divider);">A Cobrar</th>
+                  <th style="padding:0.55rem 0.75rem;text-align:center;font-size:0.7rem;color:var(--text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid var(--divider);">Acciones</th>` : ''}
                 </tr>
               </thead>
               <tbody>${dayRows}</tbody>
@@ -1732,7 +1891,7 @@ window.showHorasPorFeria = async function(userId, userName, hourlyRate) {
             ${addBtn}
           </div>`;
       }).join('')
-    : `<div style="text-align:center;padding:3rem;color:var(--text-muted);">Este empleado no tiene fichajes registrados.</div>`;
+    : `<div class="empty">Este empleado no tiene fichajes registrados.</div>`;
 
   const box = overlay.querySelector('div');
   box.innerHTML = `
@@ -1744,27 +1903,27 @@ window.showHorasPorFeria = async function(userId, userName, hourlyRate) {
           <p style="color:var(--text-secondary);font-size:0.85rem;margin:0.2rem 0 0;">Horas por feria y día</p>
         </div>
       </div>
-      <button onclick="document.getElementById('horasFeriaModal').remove()" style="background:none;border:none;cursor:pointer;padding:0.4rem;border-radius:8px;color:var(--text-secondary);line-height:0;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='none'">
+      <button class="icon-btn" onclick="document.getElementById('horasFeriaModal').remove()" style="line-height:0;">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
     </div>
 
     ${feriaEntries.length > 0 ? `
-    <div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;border-radius:12px;padding:1rem 1.5rem;margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="background:var(--primary-soft);border:1px solid color-mix(in oklab, var(--primary) 25%, transparent);border-radius:14px;padding:1.1rem 1.5rem;margin-bottom:1.5rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
       <div>
-        <div style="font-size:0.8rem;font-weight:600;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.05em;">Total acumulado</div>
-        <div style="font-size:0.75rem;color:#3b82f6;margin-top:0.1rem;">${feriaEntries.length} feria${feriaEntries.length !== 1 ? 's' : ''}${isAdmin && hourlyRate > 0 ? ` · ${hourlyRate.toFixed(2)} €/h` : ''}</div>
+        <div style="font-size:0.78rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:0.06em;">Total acumulado</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.2rem;">${feriaEntries.length} feria${feriaEntries.length !== 1 ? 's' : ''}${isAdmin && hourlyRate > 0 ? ` · ${hourlyRate.toFixed(2)} €/h` : ''}</div>
       </div>
       <div style="text-align:right;">
-        <div style="font-size:2rem;font-weight:800;color:#1d4ed8;line-height:1;">${fmtMs(totalMs)}</div>
-        ${isAdmin && totalFeriaEarnings > 0 ? `<div style="font-size:1.2rem;font-weight:800;color:#16a34a;margin-top:0.3rem;">${totalFeriaEarnings.toFixed(2)} €</div>` : ''}
+        <div style="font-size:2rem;font-weight:800;color:var(--primary);line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-0.02em;">${fmtMs(totalMs)}</div>
+        ${isAdmin && totalFeriaEarnings > 0 ? `<div style="font-size:1.2rem;font-weight:800;color:var(--success-text);margin-top:0.35rem;font-variant-numeric:tabular-nums;">${totalFeriaEarnings.toFixed(2)} €</div>` : ''}
       </div>
     </div>` : ''}
 
     ${feriaBlocks}
 
-    <div style="margin-top:0.5rem;text-align:center;">
-      <button onclick="document.getElementById('horasFeriaModal').remove()" style="background:none;border:1px solid #e2e8f0;border-radius:8px;padding:0.5rem 1.5rem;cursor:pointer;color:var(--text-secondary);font-size:0.9rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='none'">Cerrar</button>
+    <div style="margin-top:0.75rem;text-align:center;">
+      <button class="btn btn-ghost" onclick="document.getElementById('horasFeriaModal').remove()" style="padding:0.55rem 1.6rem;">Cerrar</button>
     </div>
   `;
 };
